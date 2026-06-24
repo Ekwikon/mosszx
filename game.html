@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เกม Moss วิ่งสู้ฟัด (แก้ไข Hitbox)</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            background-color: #e0f7fa;
+            box-shadow: 0px 4px 10px rgba(0,0,0,0.2);
+            border-bottom: 15px solid #693e2f; /* พื้นดิน */
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // --- โหลดรูปภาพ Moss ---
+    const mossImage = new Image();
+    mossImage.src = "moss.png"; 
+
+    const PLAYER_WIDTH = 100;  
+    const PLAYER_HEIGHT = 120; 
+    const GROUND_Y = canvas.height - 7 - PLAYER_HEIGHT; 
+
+    // ตัวแปรผู้เล่น
+    let player = {
+        x: 80,
+        y: GROUND_Y,
+        width: PLAYER_WIDTH,
+        height: PLAYER_HEIGHT,
+        yVelocity: 0,
+        gravity: 0.7, 
+        jumpStrength: -16, 
+        isGrounded: false,
+        
+        // --- 🎯 ตั้งค่า Hitbox สำหรับหลบพื้นที่ว่างในรูปภาพ ---
+        // ปรับค่าเหล่านี้ตามความเหมาะสมของรูปภาพ moss.png ของคุณ
+        hitboxOffset: {
+            left: 25,   // หดขอบซ้ายเข้ามา 20 พิกเซล
+            right: 25,  // หดขอบขวาเข้ามา 20 พิกเซล
+            top: 15,    // หดขอบบนลงมา 10 พิกเซล
+            bottom: 12   // หดขอบล่างขึ้นไป พิกเซล
+        }
+    };
+
+    // ตัวแปรสิ่งกีดขวาง
+    let obstacles = [];
+    let obstacleSpeed = 7;
+    let spawnTimer = 0;
+
+    // ระบบคะแนน สถานะเกม
+    let score = 0;
+    let isGameOver = false;
+
+    // ตรวจจับการกดปุ่ม Spacebar
+    window.addEventListener("keydown", function(e) {
+        if (e.code === "Space") {
+            if (isGameOver) {
+                resetGame();
+            } else if (player.isGrounded) {
+                player.yVelocity = player.jumpStrength;
+                player.isGrounded = false;
+            }
+        }
+    });
+
+    function spawnObstacle() {
+        let size = Math.floor(Math.random() * 30) + 20;
+        obstacles.push({
+            x: canvas.width,
+            y: canvas.height - 15 - size, 
+            width: size,
+            height: size,
+            passed: false
+        });
+    }
+
+    function resetGame() {
+        player.y = GROUND_Y;
+        player.yVelocity = 0;
+        obstacles = [];
+        obstacleSpeed = 7;
+        score = 0;
+        isGameOver = false;
+        animate();
+    }
+
+    function drawGround() {
+        ctx.fillStyle = "#8d6e63";
+        ctx.fillRect(0, canvas.height - 15, canvas.width, 15);
+    }
+
+    function animate() {
+        if (isGameOver) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawGround();
+
+        // --- 1. จัดการผู้เล่น (Player Moss) ---
+        player.yVelocity += player.gravity;
+        player.y += player.yVelocity;
+
+        if (player.y >= GROUND_Y) {
+            player.y = GROUND_Y;
+            player.yVelocity = 0;
+            player.isGrounded = true;
+        }
+
+        // วาดภาพ Moss (ขนาดเต็มปกติ)
+        if (mossImage.complete) {
+            ctx.drawImage(mossImage, player.x, player.y, player.width, player.height);
+        } else {
+            ctx.fillStyle = "#ff5722";
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+        }
+
+        // คำนวณตำแหน่งขอบเขตการชนที่แท้จริง (Actual Hitbox) ของ Moss
+        let playerHitbox = {
+            x: player.x + player.hitboxOffset.left,
+            y: player.y + player.hitboxOffset.top,
+            width: player.width - (player.hitboxOffset.left + player.hitboxOffset.right),
+            height: player.height - (player.hitboxOffset.top + player.hitboxOffset.bottom)
+        };
+
+        // 💡 [เปิดใช้งานบรรทัดข้างล่างนี้ หากต้องการเปิดเส้นสีแดงดูขนาด Hitbox เพื่อปรับแต่ง]
+        // ctx.strokeStyle = "red";
+        // ctx.strokeRect(playerHitbox.x, playerHitbox.y, playerHitbox.width, playerHitbox.height);
+
+        // --- 2. จัดการสิ่งกีดขวาง (Obstacles) ---
+        spawnTimer++;
+        if (spawnTimer > Math.random() * 50 + 60) {
+            spawnObstacle();
+            spawnTimer = 0;
+        }
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            let obs = obstacles[i];
+            obs.x -= obstacleSpeed;
+
+            // วาดสิ่งกีดขวาง
+            ctx.fillStyle = "#333333";
+            ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+
+            // ตรวจสอบการชนโดยใช้ playerHitbox แทนตัวแปร player เต็มๆ
+            if (
+                playerHitbox.x < obs.x + obs.width &&
+                playerHitbox.x + playerHitbox.width > obs.x &&
+                playerHitbox.y < obs.y + obs.height &&
+                playerHitbox.y + playerHitbox.height > obs.y
+            ) {
+                isGameOver = true;
+            }
+
+            // หลบพ้นแล้ว ได้คะแนน
+            if (obs.x + obs.width < playerHitbox.x && !obs.passed) {
+                score++;
+                obs.passed = true;
+                if (score % 5 === 0) {
+                    obstacleSpeed += 1;
+                }
+            }
+
+            if (obs.x + obs.width < 0) {
+                obstacles.splice(i, 1);
+            }
+        }
+
+        // --- 3. วาดคะแนน ---
+        ctx.fillStyle = "#000000";
+        ctx.font = "24px Arial";
+        ctx.fillText("Score: " + score, 20, 40);
+
+        // --- 4. ตรวจสอบ Game Over ---
+        if (isGameOver) {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "40px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 10);
+            
+            ctx.font = "20px Arial";
+            ctx.fillText("กด Spacebar เพื่อเริ่มใหม่", canvas.width / 2, canvas.height / 2 + 30);
+            ctx.textAlign = "start"; 
+            return;
+        }
+
+        requestAnimationFrame(animate);
+    }
+
+    // เริ่มเกม
+    mossImage.onload = function() {
+        animate();
+    };
+    setTimeout(function() {
+        if (!isGameOver) animate();
+    }, 1000); 
+
+</script>
+
+</body>
+</html>
